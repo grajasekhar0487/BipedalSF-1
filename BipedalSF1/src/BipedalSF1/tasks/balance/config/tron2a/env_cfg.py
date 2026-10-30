@@ -3,12 +3,13 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""SF-TRON2A flat-ground balance and velocity-tracking task."""
+"""SF-TRON2A balance and velocity-tracking task on mixed terrain."""
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
@@ -17,10 +18,22 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.physics import PhysxAutoCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensorCfg
+from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
+from isaaclab.terrains import (
+    HfRandomUniformTerrainCfg,
+    MeshPlaneTerrainCfg,
+    MeshPyramidStairsTerrainCfg,
+    TerrainGeneratorCfg,
+    TerrainImporterCfg,
+)
 from isaaclab.utils import configclass
 from isaaclab.utils.noise import UniformNoiseCfg
-from isaaclab_newton.physics import KaminoPADMMSolverCfg, MJWarpSolverCfg, NewtonCfg
+from isaaclab_newton.physics import (
+    KaminoPADMMSolverCfg,
+    MJWarpSolverCfg,
+    NewtonCfg,
+    NewtonCollisionPipelineCfg,
+)
 from isaaclab_ov.physics import OvPhysxCfg
 from isaaclab_physx.physics import PhysxCfg
 from isaaclab.visualizers import VisualizerCfg
@@ -28,6 +41,36 @@ from isaaclab_tasks.core.velocity import mdp
 from isaaclab_tasks.utils import PresetCfg
 
 from BipedalSF1.assets import TRON2A_USD_PATH
+
+
+TRON2A_TERRAINS_CFG = TerrainGeneratorCfg(
+    curriculum=True,
+    size=(8.0, 8.0),
+    border_width=20.0,
+    num_rows=8,
+    num_cols=8,
+    horizontal_scale=0.1,
+    vertical_scale=0.005,
+    slope_threshold=0.75,
+    sub_terrains={
+        "flat": MeshPlaneTerrainCfg(proportion=0.25),
+        "stairs": MeshPyramidStairsTerrainCfg(
+            proportion=0.35,
+            step_height_range=(0.025, 0.12),
+            step_width=0.30,
+            platform_width=2.0,
+            border_width=0.5,
+            holes=False,
+        ),
+        "uneven": HfRandomUniformTerrainCfg(
+            proportion=0.40,
+            noise_range=(0.01, 0.06),
+            noise_step=0.01,
+            border_width=0.25,
+            downsampled_scale=0.2,
+        ),
+    },
+)
 
 
 @configclass
@@ -44,7 +87,9 @@ class Tron2APhysicsCfg(PresetCfg):
             cone="pyramidal",
             impratio=1.0,
             integrator="implicitfast",
+            use_mujoco_contacts=False,
         ),
+        collision_cfg=NewtonCollisionPipelineCfg(max_triangle_pairs=2_500_000),
         num_substeps=2,
         debug_mode=False,
     )
@@ -54,11 +99,20 @@ class Tron2APhysicsCfg(PresetCfg):
 
 @configclass
 class Tron2ASceneCfg(InteractiveSceneCfg):
-    """Flat-ground scene containing the twelve-joint biped."""
+    """Curriculum terrain scene containing the twelve-joint biped."""
 
-    ground = AssetBaseCfg(
+    terrain = TerrainImporterCfg(
         prim_path="/World/ground",
-        spawn=sim_utils.GroundPlaneCfg(size=(100.0, 100.0)),
+        terrain_type="generator",
+        terrain_generator=TRON2A_TERRAINS_CFG,
+        max_init_terrain_level=1,
+        collision_group=-1,
+        physics_material=sim_utils.PhysxRigidBodyMaterialCfg(
+            friction_combine_mode="multiply",
+            restitution_combine_mode="multiply",
+            static_friction=1.0,
+            dynamic_friction=1.0,
+        ),
     )
     robot = ArticulationCfg(
         prim_path="{ENV_REGEX_NS}/Robot",
@@ -86,6 +140,14 @@ class Tron2ASceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/Robot/.*",
         history_length=3,
         track_air_time=True,
+    )
+    height_scanner = RayCasterCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/base_Link",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+        ray_alignment="yaw",
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.15, size=(0.9, 0.6)),
+        mesh_prim_paths=["/World/ground"],
+        global_world_only=True,
     )
     dome_light = AssetBaseCfg(
         prim_path="/World/DomeLight",
@@ -137,6 +199,12 @@ class ObservationsCfg:
         joint_pos = ObsTerm(func=mdp.joint_pos_rel, noise=UniformNoiseCfg(n_min=-0.01, n_max=0.01))
         joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=UniformNoiseCfg(n_min=-1.5, n_max=1.5))
         actions = ObsTerm(func=mdp.last_action)
+        height_scan = ObsTerm(
+            func=mdp.height_scan,
+            params={"sensor_cfg": SceneEntityCfg("height_scanner")},
+            noise=UniformNoiseCfg(n_min=-0.05, n_max=0.05),
+            clip=(-1.0, 1.0),
+        )
 
         def __post_init__(self) -> None:
             self.enable_corruption = True
@@ -195,7 +263,11 @@ class RewardsCfg:
         params={"command_name": "base_velocity", "std": 0.5},
     )
     upright = RewTerm(func=mdp.flat_orientation_l2, weight=-2.0)
-    base_height = RewTerm(func=mdp.base_height_l2, weight=-5.0, params={"target_height": 0.88})
+    base_height = RewTerm(
+        func=mdp.base_height_l2,
+        weight=-5.0,
+        params={"target_height": 0.88, "sensor_cfg": SceneEntityCfg("height_scanner")},
+    )
     vertical_velocity = RewTerm(func=mdp.lin_vel_z_l2, weight=-1.0)
     roll_pitch_rate = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)
     joint_torques = RewTerm(func=mdp.joint_torques_l2, weight=-1.0e-5)
@@ -233,8 +305,15 @@ class TerminationsCfg:
 
 
 @configclass
+class CurriculumCfg:
+    """Advance environments to harder terrain levels as they learn to walk."""
+
+    terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
+
+
+@configclass
 class Tron2ABalanceWalkEnvCfg(ManagerBasedRLEnvCfg):
-    """Manager-based balance and walking environment for SF-TRON2A."""
+    """Manager-based balance and terrain walking environment for SF-TRON2A."""
 
     sim: sim_utils.SimulationCfg = sim_utils.SimulationCfg(physics=Tron2APhysicsCfg())
     scene: Tron2ASceneCfg = Tron2ASceneCfg(num_envs=256, env_spacing=2.5)
@@ -244,6 +323,7 @@ class Tron2ABalanceWalkEnvCfg(ManagerBasedRLEnvCfg):
     events: EventsCfg = EventsCfg()
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
+    curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self) -> None:
         self.decimation = 4
@@ -253,3 +333,4 @@ class Tron2ABalanceWalkEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physics.default = self.sim.physics.newton_mjwarp
         self.sim.visualizer_cfgs = VisualizerCfg(eye=(3.5, 3.5, 2.5), lookat=(0.0, 0.0, 0.8))
         self.scene.contact_forces.update_period = self.sim.dt
+        self.scene.height_scanner.update_period = self.decimation * self.sim.dt

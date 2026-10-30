@@ -3,7 +3,7 @@
 An installable downstream Isaac Lab task package with a standard uv `src` layout.
 
 The registered task is:
-- `Bipedalsf1-TRON2A-Balance-Walk-v0` — balance and velocity-commanded walking for the SF-TRON2A biped.
+- `Bipedalsf1-TRON2A-Balance-Walk-v0` — balance and velocity-commanded walking across flat, stair, and uneven terrain.
 
 
 ## Installation
@@ -76,7 +76,9 @@ unless `--viz` is passed. Use `physics=<PRESET>` to select one of the presets sh
 ## Project structure
 
 Task families live in `src/BipedalSF1/tasks`. The TRON2A manager-based environment, registration, and RSL-RL PPO
-configuration live in `tasks/balance/config/tron2a`.
+configuration live in `tasks/balance/config/tron2a`. Training environments are sampled from a mixed terrain set;
+successful episodes move to harder terrain levels. A local height scanner gives the policy a compact terrain map, so
+no depth camera is required for this terrain curriculum.
 
 ## Project assets
 
