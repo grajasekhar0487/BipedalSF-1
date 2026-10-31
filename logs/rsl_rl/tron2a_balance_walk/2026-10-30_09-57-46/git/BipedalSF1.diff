@@ -1,0 +1,532 @@
+--- git commit ---
+225e3e64e21f52c94e52dcb44d0396c6f2873ed3
+
+
+--- git status ---
+On branch master
+Changes not staged for commit:
+  (use "git add/rm <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   README.md
+	modified:   src/BipedalSF1/assets/__init__.py
+	deleted:    src/BipedalSF1/tasks/balance/config/cartpole/__init__.py
+	deleted:    src/BipedalSF1/tasks/balance/config/cartpole/agents/__init__.py
+	deleted:    src/BipedalSF1/tasks/balance/config/cartpole/agents/rsl_rl_ppo_cfg.py
+	deleted:    src/BipedalSF1/tasks/balance/config/cartpole/env_cfg.py
+	deleted:    src/BipedalSF1/tasks/balance/mdp/__init__.py
+	deleted:    src/BipedalSF1/tasks/balance/mdp/__init__.pyi
+	deleted:    src/BipedalSF1/tasks/balance/mdp/rewards.py
+	modified:   tests/test_registration.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	src/BipedalSF1/tasks/balance/config/tron2a/
+	uv.lock
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/README.md b/README.md
+index 58e1f42..bef252c 100644
+--- a/README.md
++++ b/README.md
+@@ -2,8 +2,8 @@
+ 
+ An installable downstream Isaac Lab task package with a standard uv `src` layout.
+ 
+-The registered tasks are:
+-- `Bipedalsf1-Balance-Cartpole`
++The registered task is:
++- `Bipedalsf1-TRON2A-Balance-Walk-v0` — balance and velocity-commanded walking for the SF-TRON2A biped.
+ 
+ 
+ ## Installation
+@@ -39,50 +39,57 @@ environment.
+ 
+ ## Run the tasks
+ 
+-Replace the placeholders below with a task listed above and a selected RL library.
++The default backend is Newton MJWarp. You can run on CPU or select a CUDA device with `--device`.
+ 
+ ```bash
+ # List this project's environments and their available presets
+ uv run isaaclab list_envs --show_presets
+ 
+ # Exercise an environment without a trained policy
+-uv run isaaclab zero_agent --task <TASK_NAME> --num_envs 16
+-uv run isaaclab random_agent --task <TASK_NAME> --num_envs 16
++uv run isaaclab zero_agent --task Bipedalsf1-TRON2A-Balance-Walk-v0 --num_envs 16 --device cpu
++uv run isaaclab random_agent --task Bipedalsf1-TRON2A-Balance-Walk-v0 --num_envs 16 --device cuda:0
+ 
+-# Train and play
+-uv run isaaclab train --rl_library <RL_LIBRARY> --task <TASK_NAME>
+-uv run isaaclab play --rl_library <RL_LIBRARY> --task <TASK_NAME> --checkpoint latest
++# Train with a live Newton MJWarp viewport (Newton GL)
++uv run isaaclab train --rl_library rsl_rl --task Bipedalsf1-TRON2A-Balance-Walk-v0 --num_envs 64 --device cuda:0 --viz newton_gl physics=newton_mjwarp
++
++# Train with the Isaac Sim / PhysX viewport (install the Isaac Sim extra)
++uv run --extra isaacsim isaaclab train --rl_library rsl_rl --task Bipedalsf1-TRON2A-Balance-Walk-v0 --num_envs 64 --device cuda:0 --viz kit physics=isaacsim_physx
++
++# Play a trained checkpoint with either live viewport
++uv run isaaclab play --rl_library rsl_rl --task Bipedalsf1-TRON2A-Balance-Walk-v0 --checkpoint latest --device cuda:0 --viz newton_gl physics=newton_mjwarp
++uv run --extra isaacsim isaaclab play --rl_library rsl_rl --task Bipedalsf1-TRON2A-Balance-Walk-v0 --checkpoint latest --device cuda:0 --viz kit physics=isaacsim_physx
++
++# Small CPU training run
++uv run isaaclab train --rl_library rsl_rl --task Bipedalsf1-TRON2A-Balance-Walk-v0 --num_envs 16 --device cpu
+ 
+ # Distributed training
+-uv run isaaclab train_multigpu --rl_library <RL_LIBRARY> --task <TASK_NAME> --num_gpus 2
++uv run isaaclab train_multigpu --rl_library rsl_rl --task Bipedalsf1-TRON2A-Balance-Walk-v0 --num_gpus 2
+ 
+ # Benchmark startup, runtime, training, or play
+-uv run isaaclab benchmark runtime --task <TASK_NAME> --num_envs 16 --num_steps 1000
+-uv run isaaclab benchmark training --rl_library <RL_LIBRARY> --task <TASK_NAME> --max_iterations 10
++uv run isaaclab benchmark runtime --task Bipedalsf1-TRON2A-Balance-Walk-v0 --num_envs 16 --num_steps 1000
++uv run isaaclab benchmark training --rl_library rsl_rl --task Bipedalsf1-TRON2A-Balance-Walk-v0 --max_iterations 10
+ ```
+ 
+-Use `physics=<PRESET>` to select one of the presets shown by `isaaclab list_envs`.
++The Isaac Sim viewport uses `--viz kit`; the Newton MJWarp viewport uses `--viz newton_gl`. Visual rendering is off
++unless `--viz` is passed. Use `physics=<PRESET>` to select one of the presets shown by `isaaclab list_envs`.
+ 
+ ## Project structure
+ 
+-Task families live in `src/BipedalSF1/tasks`. Within a manager-based family, task-wide MDP terms live in `mdp`, while
+-robot-specific scenes, registrations, and agent configurations live in `config/cartpole`. Add another robot by
+-creating a sibling of `config/cartpole`; add another task by creating a sibling task-family directory.
++Task families live in `src/BipedalSF1/tasks`. The TRON2A manager-based environment, registration, and RSL-RL PPO
++configuration live in `tasks/balance/config/tron2a`.
+ 
+ ## Project assets
+ 
+-Keep project-owned USD files and related data under `src/BipedalSF1/assets/data`. The asset module exposes a
+-stable path that works from an editable checkout and an installed wheel:
++The layered SF-TRON2A USD lives in the repository-level `SF_TRON2A/usd` directory beside this package. Its layers and
++configuration subdirectory must stay together. The asset module resolves `robot.usd` from an editable checkout:
+ 
+ ```python
+-from BipedalSF1.assets import BIPEDALSF1_ASSETS_DIR
++from BipedalSF1.assets import TRON2A_USD_PATH
+ 
+-robot_usd_path = BIPEDALSF1_ASSETS_DIR / "robots" / "my_robot.usd"
++robot_usd_path = TRON2A_USD_PATH
+ ```
+ 
+-Keep asset configuration in the `BipedalSF1.assets` package and pass `str(robot_usd_path)` to configuration fields that
+-expect a string. USD files are configured for Git LFS by the project's `.gitattributes`; install Git LFS before adding
+-large binary assets.
++The environment uses the supplied USD directly, including its linked configuration layers and authored geometry.
+ 
+ ## Development
+ 
+diff --git a/src/BipedalSF1/assets/__init__.py b/src/BipedalSF1/assets/__init__.py
+index ca090e7..6c0f7c1 100644
+--- a/src/BipedalSF1/assets/__init__.py
++++ b/src/BipedalSF1/assets/__init__.py
+@@ -9,3 +9,8 @@ from pathlib import Path
+ 
+ BIPEDALSF1_ASSETS_DIR = Path(__file__).resolve().parent / "data"
+ """Path to project-owned asset data."""
++
++# The robot model is maintained alongside the task package so its layered USD
++# and the URDF/MJCF source description stay together.
++TRON2A_USD_PATH = Path(__file__).resolve().parents[4] / "SF_TRON2A" / "usd" / "robot.usd"
++"""Path to the SF-TRON2A robot USD in the repository checkout."""
+diff --git a/src/BipedalSF1/tasks/balance/config/cartpole/__init__.py b/src/BipedalSF1/tasks/balance/config/cartpole/__init__.py
+deleted file mode 100644
+index 30ea4d9..0000000
+--- a/src/BipedalSF1/tasks/balance/config/cartpole/__init__.py
++++ /dev/null
+@@ -1,24 +0,0 @@
+-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
+-# SPDX-License-Identifier: BSD-3-Clause
+-
+-import gymnasium as gym
+-
+-from . import agents
+-
+-##
+-# Register Gym environments.
+-##
+-
+-
+-gym.register(
+-    id="Bipedalsf1-Balance-Cartpole",
+-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+-    disable_env_checker=True,
+-    kwargs={
+-        "env_cfg_entry_point": f"{__name__}.env_cfg:BalanceEnvCfg",
+-        "default_agent": "rsl_rl",
+-        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
+-    },
+-)
+diff --git a/src/BipedalSF1/tasks/balance/config/cartpole/agents/__init__.py b/src/BipedalSF1/tasks/balance/config/cartpole/agents/__init__.py
+deleted file mode 100644
+index c6be6a7..0000000
+--- a/src/BipedalSF1/tasks/balance/config/cartpole/agents/__init__.py
++++ /dev/null
+@@ -1,6 +0,0 @@
+-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
+-# SPDX-License-Identifier: BSD-3-Clause
+-
+-"""Agent configurations for the task."""
+diff --git a/src/BipedalSF1/tasks/balance/config/cartpole/agents/rsl_rl_ppo_cfg.py b/src/BipedalSF1/tasks/balance/config/cartpole/agents/rsl_rl_ppo_cfg.py
+deleted file mode 100644
+index 8346017..0000000
+--- a/src/BipedalSF1/tasks/balance/config/cartpole/agents/rsl_rl_ppo_cfg.py
++++ /dev/null
+@@ -1,42 +0,0 @@
+-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
+-# SPDX-License-Identifier: BSD-3-Clause
+-
+-from isaaclab.utils import configclass
+-
+-from isaaclab_rl.rsl_rl import RslRlMLPModelCfg, RslRlOnPolicyRunnerCfg, RslRlPpoAlgorithmCfg
+-
+-
+-@configclass
+-class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
+-    num_steps_per_env = 16
+-    max_iterations = 150
+-    save_interval = 50
+-    experiment_name = "cartpole_direct"
+-    obs_groups = {"actor": ["policy"], "critic": ["policy"]}
+-    actor = RslRlMLPModelCfg(
+-        hidden_dims=[32, 32],
+-        activation="elu",
+-        obs_normalization=False,
+-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0),
+-    )
+-    critic = RslRlMLPModelCfg(
+-        hidden_dims=[32, 32],
+-        activation="elu",
+-        obs_normalization=False,
+-    )
+-    algorithm = RslRlPpoAlgorithmCfg(
+-        value_loss_coef=1.0,
+-        use_clipped_value_loss=True,
+-        clip_param=0.2,
+-        entropy_coef=0.005,
+-        num_learning_epochs=5,
+-        num_mini_batches=4,
+-        learning_rate=1.0e-3,
+-        schedule="adaptive",
+-        gamma=0.99,
+-        lam=0.95,
+-        desired_kl=0.01,
+-        max_grad_norm=1.0,
+-    )
+diff --git a/src/BipedalSF1/tasks/balance/config/cartpole/env_cfg.py b/src/BipedalSF1/tasks/balance/config/cartpole/env_cfg.py
+deleted file mode 100644
+index c25a38c..0000000
+--- a/src/BipedalSF1/tasks/balance/config/cartpole/env_cfg.py
++++ /dev/null
+@@ -1,217 +0,0 @@
+-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
+-# SPDX-License-Identifier: BSD-3-Clause
+-
+-import math
+-
+-import isaaclab.sim as sim_utils
+-from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+-from isaaclab.envs import ManagerBasedRLEnvCfg
+-from isaaclab.managers import EventTermCfg as EventTerm
+-from isaaclab.managers import ObservationGroupCfg as ObsGroup
+-from isaaclab.managers import ObservationTermCfg as ObsTerm
+-from isaaclab.managers import RewardTermCfg as RewTerm
+-from isaaclab.managers import SceneEntityCfg
+-from isaaclab.managers import TerminationTermCfg as DoneTerm
+-from isaaclab.physics import PhysxAutoCfg
+-from isaaclab.scene import InteractiveSceneCfg
+-from isaaclab.utils import configclass
+-from isaaclab.visualizers import VisualizerCfg
+-from isaaclab_newton.physics import KaminoPADMMSolverCfg, MJWarpSolverCfg, NewtonCfg
+-from isaaclab_ov.physics import OvPhysxCfg
+-from isaaclab_physx.physics import PhysxCfg
+-
+-from isaaclab_tasks.utils import PresetCfg
+-
+-from ... import mdp
+-
+-##
+-# Pre-defined configs
+-##
+-
+-from isaaclab_assets.robots.cartpole import CARTPOLE_CFG  # isort:skip
+-
+-
+-@configclass
+-class BalancePhysicsCfg(PresetCfg):
+-    """Physics presets for the cart-pole environment."""
+-
+-    isaacsim_physx: PhysxCfg = PhysxCfg()
+-    ovphysx: OvPhysxCfg = OvPhysxCfg()
+-    physx: PhysxAutoCfg = PhysxAutoCfg(isaacsim_physx=isaacsim_physx, ovphysx=ovphysx)
+-    newton_mjwarp: NewtonCfg = NewtonCfg(
+-        solver_cfg=MJWarpSolverCfg(
+-            njmax=5,
+-            nconmax=3,
+-            cone="pyramidal",
+-            impratio=1,
+-            integrator="implicitfast",
+-        ),
+-        num_substeps=1,
+-        debug_mode=False,
+-        use_cuda_graph=True,
+-    )
+-    newton_kamino: NewtonCfg = NewtonCfg(
+-        solver_cfg=KaminoPADMMSolverCfg(sparse_jacobian=True),
+-        debug_mode=False,
+-        use_cuda_graph=True,
+-    )
+-    default: NewtonCfg = newton_mjwarp
+-
+-
+-##
+-# Scene definition
+-##
+-
+-
+-@configclass
+-class BalanceSceneCfg(InteractiveSceneCfg):
+-    """Configuration for a cart-pole scene."""
+-
+-    # ground plane
+-    ground = AssetBaseCfg(
+-        prim_path="/World/ground",
+-        spawn=sim_utils.GroundPlaneCfg(size=(100.0, 100.0)),
+-    )
+-
+-    # robot
+-    robot: ArticulationCfg = CARTPOLE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+-
+-    # lights
+-    dome_light = AssetBaseCfg(
+-        prim_path="/World/DomeLight",
+-        spawn=sim_utils.DomeLightCfg(color=(0.9, 0.9, 0.9), intensity=500.0),
+-    )
+-
+-
+-##
+-# MDP settings
+-##
+-
+-
+-@configclass
+-class ActionsCfg:
+-    """Action specifications for the MDP."""
+-
+-    joint_effort = mdp.JointEffortActionCfg(asset_name="robot", joint_names=["slider_to_cart"], scale=100.0)
+-
+-
+-@configclass
+-class ObservationsCfg:
+-    """Observation specifications for the MDP."""
+-
+-    @configclass
+-    class PolicyCfg(ObsGroup):
+-        """Observations for policy group."""
+-
+-        # observation terms (order preserved)
+-        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel)
+-        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel)
+-
+-        def __post_init__(self) -> None:
+-            self.enable_corruption = False
+-            self.concatenate_terms = True
+-
+-    # observation groups
+-    policy: PolicyCfg = PolicyCfg()
+-
+-
+-@configclass
+-class EventCfg:
+-    """Configuration for events."""
+-
+-    # reset
+-    reset_cart_position = EventTerm(
+-        func=mdp.reset_joints_by_offset,
+-        mode="reset",
+-        params={
+-            "asset_cfg": SceneEntityCfg("robot", joint_names=["slider_to_cart"]),
+-            "position_range": (-1.0, 1.0),
+-            "velocity_range": (-0.5, 0.5),
+-        },
+-    )
+-
+-    reset_pole_position = EventTerm(
+-        func=mdp.reset_joints_by_offset,
+-        mode="reset",
+-        params={
+-            "asset_cfg": SceneEntityCfg("robot", joint_names=["cart_to_pole"]),
+-            "position_range": (-0.25 * math.pi, 0.25 * math.pi),
+-            "velocity_range": (-0.25 * math.pi, 0.25 * math.pi),
+-        },
+-    )
+-
+-
+-@configclass
+-class RewardsCfg:
+-    """Reward terms for the MDP."""
+-
+-    # (1) Constant running reward
+-    alive = RewTerm(func=mdp.is_alive, weight=1.0)
+-    # (2) Failure penalty
+-    terminating = RewTerm(func=mdp.is_terminated, weight=-2.0)
+-    # (3) Primary task: keep pole upright
+-    pole_pos = RewTerm(
+-        func=mdp.joint_pos_target_l2,
+-        weight=-1.0,
+-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["cart_to_pole"]), "target": 0.0},
+-    )
+-    # (4) Shaping tasks: lower cart velocity
+-    cart_vel = RewTerm(
+-        func=mdp.joint_vel_l1,
+-        weight=-0.01,
+-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["slider_to_cart"])},
+-    )
+-    # (5) Shaping tasks: lower pole angular velocity
+-    pole_vel = RewTerm(
+-        func=mdp.joint_vel_l1,
+-        weight=-0.005,
+-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["cart_to_pole"])},
+-    )
+-
+-
+-@configclass
+-class TerminationsCfg:
+-    """Termination terms for the MDP."""
+-
+-    # (1) Time out
+-    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+-    # (2) Cart out of bounds
+-    cart_out_of_bounds = DoneTerm(
+-        func=mdp.joint_pos_out_of_manual_limit,
+-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["slider_to_cart"]), "bounds": (-3.0, 3.0)},
+-    )
+-
+-
+-##
+-# Environment configuration
+-##
+-
+-
+-@configclass
+-class BalanceEnvCfg(ManagerBasedRLEnvCfg):
+-    """Configuration for the cart-pole environment."""
+-
+-    # Scene settings
+-    scene: BalanceSceneCfg = BalanceSceneCfg(num_envs=4096, env_spacing=4.0)
+-    # Basic settings
+-    observations: ObservationsCfg = ObservationsCfg()
+-    actions: ActionsCfg = ActionsCfg()
+-    events: EventCfg = EventCfg()
+-    # MDP settings
+-    rewards: RewardsCfg = RewardsCfg()
+-    terminations: TerminationsCfg = TerminationsCfg()
+-
+-    # Post initialization
+-    def __post_init__(self) -> None:
+-        """Post initialization."""
+-        # general settings
+-        self.decimation = 2
+-        self.episode_length_s = 5
+-        # visualizer camera settings
+-        self.sim.visualizer_cfgs = VisualizerCfg(eye=(8.0, 0.0, 5.0))
+-        # simulation settings
+-        self.sim.dt = 1 / 120
+-        self.sim.render_interval = self.decimation
+-        self.sim.physics = BalancePhysicsCfg()
+diff --git a/src/BipedalSF1/tasks/balance/mdp/__init__.py b/src/BipedalSF1/tasks/balance/mdp/__init__.py
+deleted file mode 100644
+index 8596e8e..0000000
+--- a/src/BipedalSF1/tasks/balance/mdp/__init__.py
++++ /dev/null
+@@ -1,10 +0,0 @@
+-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
+-# SPDX-License-Identifier: BSD-3-Clause
+-
+-"""This sub-module contains the functions that are specific to the environment."""
+-
+-from isaaclab.utils.module import lazy_export
+-
+-lazy_export()
+diff --git a/src/BipedalSF1/tasks/balance/mdp/__init__.pyi b/src/BipedalSF1/tasks/balance/mdp/__init__.pyi
+deleted file mode 100644
+index 8807c4a..0000000
+--- a/src/BipedalSF1/tasks/balance/mdp/__init__.pyi
++++ /dev/null
+@@ -1,13 +0,0 @@
+-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
+-# SPDX-License-Identifier: BSD-3-Clause
+-
+-__all__ = [
+-    "joint_pos_target_l2",
+-]
+-
+-# Forward stable MDP terms lazily, then override with environment-specific terms below.
+-from isaaclab.envs.mdp import *  # noqa: F401, F403
+-
+-from .rewards import joint_pos_target_l2
+diff --git a/src/BipedalSF1/tasks/balance/mdp/rewards.py b/src/BipedalSF1/tasks/balance/mdp/rewards.py
+deleted file mode 100644
+index 065a54e..0000000
+--- a/src/BipedalSF1/tasks/balance/mdp/rewards.py
++++ /dev/null
+@@ -1,27 +0,0 @@
+-# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+-# All rights reserved.
+-#
+-# SPDX-License-Identifier: BSD-3-Clause
+-
+-from __future__ import annotations
+-
+-from typing import TYPE_CHECKING
+-
+-import torch
+-
+-from isaaclab.managers import SceneEntityCfg
+-from isaaclab.utils.math import wrap_to_pi
+-
+-if TYPE_CHECKING:
+-    from isaaclab.assets import Articulation
+-    from isaaclab.envs import ManagerBasedRLEnv
+-
+-
+-def joint_pos_target_l2(env: ManagerBasedRLEnv, target: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+-    """Penalize joint position deviation from a target value."""
+-    # extract the used quantities (to enable type-hinting)
+-    asset: Articulation = env.scene[asset_cfg.name]
+-    # wrap the joint positions to (-pi, pi)
+-    joint_pos = wrap_to_pi(asset.data.joint_pos.torch[:, asset_cfg.joint_ids])
+-    # compute the reward
+-    return torch.sum(torch.square(joint_pos - target), dim=1)
+diff --git a/tests/test_registration.py b/tests/test_registration.py
+index 84d1a4d..7259537 100644
+--- a/tests/test_registration.py
++++ b/tests/test_registration.py
+@@ -13,9 +13,9 @@ import BipedalSF1.tasks  # noqa: F401
+ def test_task_registrations():
+     """The project tasks must expose valid environment and agent entry points."""
+     expected = {
+-        "Bipedalsf1-Balance-Cartpole": {
++        "Bipedalsf1-TRON2A-Balance-Walk-v0": {
+             "entry_point": "isaaclab.envs:ManagerBasedRLEnv",
+-            "env_cfg_entry_point": "BipedalSF1.tasks.balance.config.cartpole.env_cfg:BalanceEnvCfg",
++            "env_cfg_entry_point": "BipedalSF1.tasks.balance.config.tron2a.env_cfg:Tron2ABalanceWalkEnvCfg",
+             "default_agent": "rsl_rl",
+         },
+     }
